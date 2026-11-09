@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Трекер расходов</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💰 Трекер расходов</h1>
+            <p>Контролируйте свои финансы легко и просто</p>
+        </header>
+
+        <!-- Форма добавления + Статистика -->
+        <div class="dashboard">
+            <!-- Форма добавления траты -->
+            <div class="card">
+                <h2>➕ Добавить трату</h2>
+                <form id="expenseForm">
+                    <div class="form-group">
+                        <label for="amount">Сумма (₽)</label>
+                        <input type="number" id="amount" step="0.01" min="0.01" required placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Описание</label>
+                        <input type="text" id="description" required placeholder="Например: обед в кафе">
+                    </div>
+                    <div class="form-group">
+                        <label for="date">Дата</label>
+                        <input type="date" id="date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="category">Категория <small>(определяется автоматически)</small></label>
+                        <select id="category">
+                            <option value="auto">🤖 Автоматически</option>
+                            <option value="Еда">🍔 Еда</option>
+                            <option value="Транспорт">🚌 Транспорт</option>
+                            <option value="Развлечения">🎬 Развлечения</option>
+                            <option value="Здоровье">💊 Здоровье</option>
+                            <option value="Жилье">🏠 Жильё</option>
+                            <option value="Прочее">📦 Прочее</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Добавить трату</button>
+                </form>
+            </div>
+
+            <!-- Статистика -->
+            <div class="card">
+                <h2>📊 Статистика за месяц</h2>
+
+                <div class="form-group">
+                    <label for="budget">Бюджет на месяц (₽)</label>
+                    <div class="budget-input">
+                        <input type="number" id="budget" step="100" min="0" placeholder="50000">
+                        <button class="btn btn-primary" id="saveBudgetBtn" style="width:auto;padding:10px 16px;">OK</button>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-box spent">
+                        <div class="label">Потрачено</div>
+                        <div class="value" id="totalSpent">0 ₽</div>
+                    </div>
+                    <div class="stat-box remaining" id="remainingBox">
+                        <div class="label">Остаток</div>
+                        <div class="value" id="remaining">0 ₽</div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Список трат -->
+        <div class="expenses-section">
+            <h2 style="margin-bottom:16px;color:#444;">📋 Все траты</h2>
+
+            <div class="filters">
+                <select id="filterCategory">
+                    <option value="">Все категории</option>
+                    <option value="Еда">🍔 Еда</option>
+                    <option value="Транспорт">🚌 Транспорт</option>
+                    <option value="Развлечения">🎬 Развлечения</option>
+                    <option value="Здоровье">💊 Здоровье</option>
+                    <option value="Жилье">🏠 Жильё</option>
+                    <option value="Прочее">📦 Прочее</option>
+                </select>
+                <input type="date" id="filterFrom" title="От">
+                <input type="date" id="filterTo" title="До">
+                <button class="btn btn-primary" id="resetFiltersBtn" style="width:auto;padding:8px 16px;">Сбросить</button>
+            </div>
+
+            <ul class="expenses-list" id="expensesList"></ul>
+        </div>
+    </div>
+
+    <script>
+        // ========== КОНФИГУРАЦИЯ КАТЕГОРИЙ ==========
+        const CATEGORIES = {
+            'Еда':         { color: '#FF6384', keywords: ['продукт', 'магазин', 'обед', 'кафе', 'ресторан', 'пицц', 'кофе', 'еда', 'суши', 'бургер', 'чай', 'завтрак', 'ужин', 'пятёрочк', 'пятерочк', 'магнит', 'лента', 'перекресток'] },
+            'Транспорт':   { color: '#36A2EB', keywords: ['метро', 'такси', 'автобус', 'бензин', 'заправк', 'проезд', 'маршрутк', 'электричк', 'каршер', 'яндекс.go'] },
+            'Развлечения': { color: '#FFCE56', keywords: ['кино', 'концерт', 'игр', 'подписк', 'netflix', 'spotify', 'театр', 'bar', 'бар', 'клуб', 'steam'] },
+            'Здоровье':    { color: '#4BC0C0', keywords: ['аптек', 'врач', 'лекарств', 'клиник', 'больниц', 'анализ', 'стоматолог', 'витамин'] },
+            'Жилье':       { color: '#9966FF', keywords: ['аренд', 'коммуналк', 'интернет', 'свет', 'газ', 'вод', 'квартплат', 'жкх', 'наём'] },
+            'Прочее':      { color: '#C9CBCF', keywords: [] }
+        };
+
+        // ========== СОСТОЯНИЕ ==========
+        let expenses = JSON.parse(localStorage.getItem('expenses') || '[]');
+        let budget = parseFloat(localStorage.getItem('budget') || '0');
+        let editingId = null;
+        let chart = null;
+
+        // ========== УТИЛИТЫ ==========
+        const $ = (id) => document.getElementById(id);
+        const formatMoney = (n) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(n);
+        const formatDate = (iso) => new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        // ========== АВТОКАТЕГОРИЗАЦИЯ ==========
+        function autoCategorize(description) {
+            const text = description.toLowerCase();
+            for (const [category, data] of Object.entries(CATEGORIES)) {
+                if (category === 'Прочее') continue;
+                for (const keyword of data.keywords) {
+                    if (text.includes(keyword)) return category;
+                }
+            }
+            return 'Прочее';
+        }
+
+        // ========== СОХРАНЕНИЕ ==========
+        function save() {
+            localStorage.setItem('expenses', JSON.stringify(expenses));
+            localStorage.setItem('budget', budget);
+        }
+
+        // ========== РЕНДЕР СПИСКА ==========
+        function renderExpenses() {
+            const filterCat = $('filterCategory').value;
+            const filterFrom = $('filterFrom').value;
+            const filterTo = $('filterTo').value;
+
+            let filtered = expenses.filter(e => {
+                if (filterCat && e.category !== filterCat) return false;
+                if (filterFrom && e.date < filterFrom) return false;
+                if (filterTo && e.date > filterTo) return false;
+                return true;
+            });
+
+            // Сортировка: сначала новые
+            filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            const list = $('expensesList');
+
+            if (filtered.length === 0) {
+                list.innerHTML = '<li class="empty-state">😶 Пока нет трат по выбранным фильтрам</li>';
+                return;
+            }
+
+            list.innerHTML = filtered.map(e => `
+                <li class="expense-item">
+                    <div class="expense-info">
+                        <div class="expense-desc">${escapeHtml(e.description)}</div>
+                        <div class="expense-meta">
+                            <span class="category-badge" style="background:${CATEGORIES[e.category]?.color || '#888'}">
+                                ${e.category}
+                            </span>
+                            ${formatDate(e.date)}
+                        </div>
+                    </div>
+                    <div class="expense-amount">-${formatMoney(e.amount)}</div>
+                    <div class="expense-actions">
+                        <button class="btn btn-edit" data-edit="${e.id}">✏️</button>
+                        <button class="btn btn-danger" data-delete="${e.id}">🗑️</button>
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // ========== РЕНДЕР СТАТИСТИКИ ==========
+        function renderStats() {
+            const now = new Date();
+            const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+            const monthExpenses = expenses.filter(e => e.date.startsWith(currentMonth));
+            const totalSpent = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+            const remaining = budget - totalSpent;
+
+            $('totalSpent').textContent = formatMoney(totalSpent);
+            $('remaining').textContent = formatMoney(remaining);
+            $('budget').value = budget || '';
+
+            const remainingBox = $('remainingBox');
+            if (remaining < 0) remainingBox.classList.add('negative');
+            else remainingBox.classList.remove('negative');
+
+            renderChart(monthExpenses);
+        }
+
+        // ========== ДИАГРАММА ==========
+        function renderChart(monthExpenses) {
+            const totalsByCategory = {};
+            monthExpenses.forEach(e => {
+                totalsByCategory[e.category] = (totalsByCategory[e.category] || 0) + e.amount;
+            });
+
+            const labels = Object.keys(totalsByCategory);
+            const data = Object.values(totalsByCategory);
+            const colors = labels.map(l => CATEGORIES[l]?.color || '#888');
+
+            const ctx = $('categoryChart').getContext('2d');
+
+            if (chart) chart.destroy();
+
+            if (labels.length === 0) {
+                // Пустая диаграмма
+                chart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: ['Нет данных'], datasets: [{ data: [1], backgroundColor: ['#eee'], borderWidth: 0 }] },
+                    options: { plugins: { legend: { display: false }, tooltip: { enabled: false } }, cutout: '70%' }
+                });
+                return;
+            }
+
+            chart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels,
+                    datasets: [{
+                        data,
+                        backgroundColor: colors,
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { font: { size: 11 }, padding: 10, boxWidth: 12 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => ` ${ctx.label}: ${formatMoney(ctx.parsed)}`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ========== ОБНОВЛЕНИЕ ВСЕГО ==========
+        function updateAll() {
+            save();
+            renderExpenses();
+            renderStats();
+        }
+
+        // ========== ОБРАБОТКА ФОРМЫ ==========
+        $('expenseForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const amount = parseFloat($('amount').value);
+            const description = $('description').value.trim();
+            const date = $('date').value;
+            const categoryChoice = $('category').value;
+
+            if (!amount || !description || !date) return;
+
+            const category = categoryChoice === 'auto'
+                ? autoCategorize(description)
+                : categoryChoice;
+
+            if (editingId) {
+                // Редактирование
+                const idx = expenses.findIndex(e => e.id === editingId);
+                if (idx !== -1) {
+                    expenses[idx] = { ...expenses[idx], amount, description, date, category };
+                }
+                editingId = null;
+                $('submitBtn').textContent = 'Добавить трату';
+            } else {
+                // Новая трата
+                expenses.push({
+                    id: Date.now(),
+                    amount,
+                    description,
+                    date,
+                    category
+                });
+            }
+
+            // Сброс формы
+            $('expenseForm').reset();
+            $('date').valueAsDate = new Date();
+            $('category').value = 'auto';
+
+            updateAll();
+        });
+
+        // ========== ОБРАБОТКА КНОПОК В СПИСКЕ ==========
+        $('expensesList').addEventListener('click', (e) => {
+            const deleteId = e.target.dataset.delete;
+            const editId = e.target.dataset.edit;
+
+            if (deleteId) {
+                if (confirm('Удалить эту трату?')) {
+                    expenses = expenses.filter(x => x.id !== parseInt(deleteId));
+                    updateAll();
+                }
+            }
+
+            if (editId) {
+                const expense = expenses.find(x => x.id === parseInt(editId));
+                if (!expense) return;
+                editingId = expense.id;
+                $('amount').value = expense.amount;
+                $('description').value = expense.description;
+                $('date').value = expense.date;
+                $('category').value = expense.category;
+                $('submitBtn').textContent = 'Сохранить изменения';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+
+        // ========== БЮДЖЕТ ==========
+        $('saveBudgetBtn').addEventListener('click', () => {
+            budget = parseFloat($('budget').value) || 0;
+            save();
+            renderStats();
+        });
+
+        // ========== ФИЛЬТРЫ ==========
+        ['filterCategory', 'filterFrom', 'filterTo'].forEach(id => {
+            $(id).addEventListener('change', renderExpenses);
+        });
+
+        $('resetFiltersBtn').addEventListener('click', () => {
+            $('filterCategory').value = '';
+            $('filterFrom').value = '';
+            $('filterTo').value = '';
+            renderExpenses();
+        });
+
+        // ========== ИНИЦИАЛИЗАЦИЯ ==========
+        document.addEventListener('DOMContentLoaded', () => {
+            $('date').valueAsDate = new Date();
+            updateAll();
+        });
+    </script>
+</body>
+</html>
